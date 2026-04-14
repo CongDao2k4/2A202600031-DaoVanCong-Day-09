@@ -5,3 +5,6 @@ __pycache__/
 
 .evnv
 evnv
+
+venv/
+.venv/
