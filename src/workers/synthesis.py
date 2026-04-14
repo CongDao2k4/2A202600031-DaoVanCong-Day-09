@@ -34,14 +34,26 @@ Quy tắc nghiêm ngặt:
 def _call_llm(messages: list) -> str:
     """
     Gọi LLM để tổng hợp câu trả lời.
-    TODO Sprint 2: Implement với OpenAI hoặc Gemini.
+    Hỗ trợ OpenAI API hoặc OpenAI-compatible endpoints (LM Studio, v.v.)
     """
-    # Option A: OpenAI
+    # Option A: OpenAI / OpenAI-compatible (LM Studio, Ollama, vLLM)
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        # Lấy config từ environment
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL")
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+        # Khởi tạo client với base URL nếu có (cho LM Studio/local LLM)
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+
+        client = OpenAI(**client_kwargs)
+
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=messages,
             temperature=0.1,  # Low temperature để grounded
             max_tokens=500,
@@ -53,6 +65,7 @@ def _call_llm(messages: list) -> str:
     # Option B: Gemini
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         model = genai.GenerativeModel("gemini-1.5-flash")
         combined = "\n".join([m["content"] for m in messages])
@@ -134,8 +147,8 @@ def synthesize(task: str, chunks: list, policy_result: dict) -> dict:
 
 {context}
 
-Hãy trả lời câu hỏi dựa vào tài liệu trên."""
-        }
+Hãy trả lời câu hỏi dựa vào tài liệu trên.""",
+        },
     ]
 
     answer = _call_llm(messages)
@@ -236,7 +249,12 @@ if __name__ == "__main__":
         ],
         "policy_result": {
             "policy_applies": False,
-            "exceptions_found": [{"type": "flash_sale_exception", "rule": "Flash Sale không được hoàn tiền."}],
+            "exceptions_found": [
+                {
+                    "type": "flash_sale_exception",
+                    "rule": "Flash Sale không được hoàn tiền.",
+                }
+            ],
         },
     }
     result2 = run(test_state2.copy())

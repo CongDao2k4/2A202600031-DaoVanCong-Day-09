@@ -36,29 +36,49 @@ def _get_embedding_fn():
     # Option A: Sentence Transformers (offline, không cần API key)
     try:
         from sentence_transformers import SentenceTransformer
+
         model = SentenceTransformer("all-MiniLM-L6-v2")
+
         def embed(text: str) -> list:
             return model.encode([text])[0].tolist()
+
         return embed
     except ImportError:
         pass
 
-    # Option B: OpenAI (cần API key)
+    # Option B: OpenAI / OpenAI-compatible (cần API key)
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        # Lấy config từ environment
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL")
+        embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+
+        # Khởi tạo client với base URL nếu có (cho LM Studio/local LLM)
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+
+        client = OpenAI(**client_kwargs)
+
         def embed(text: str) -> list:
-            resp = client.embeddings.create(input=text, model="text-embedding-3-small")
+            resp = client.embeddings.create(input=text, model=embedding_model)
             return resp.data[0].embedding
+
         return embed
     except ImportError:
         pass
 
     # Fallback: random embeddings cho test (KHÔNG dùng production)
     import random
+
     def embed(text: str) -> list:
         return [random.random() for _ in range(384)]
-    print("⚠️  WARNING: Using random embeddings (test only). Install sentence-transformers.")
+
+    print(
+        "⚠️  WARNING: Using random embeddings (test only). Install sentence-transformers."
+    )
     return embed
 
 
@@ -68,16 +88,18 @@ def _get_collection():
     TODO Sprint 2: Đảm bảo collection đã được build từ Step 3 trong README.
     """
     import chromadb
+
     client = chromadb.PersistentClient(path="./chroma_db")
     try:
         collection = client.get_collection("day09_docs")
     except Exception:
         # Auto-create nếu chưa có
         collection = client.get_or_create_collection(
-            "day09_docs",
-            metadata={"hnsw:space": "cosine"}
+            "day09_docs", metadata={"hnsw:space": "cosine"}
         )
-        print(f"⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.")
+        print(
+            f"⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước."
+        )
     return collection
 
 
@@ -102,21 +124,25 @@ def retrieve_dense(query: str, top_k: int = DEFAULT_TOP_K) -> list:
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            include=["documents", "distances", "metadatas"]
+            include=["documents", "distances", "metadatas"],
         )
 
         chunks = []
-        for i, (doc, dist, meta) in enumerate(zip(
-            results["documents"][0],
-            results["distances"][0],
-            results["metadatas"][0]
-        )):
-            chunks.append({
-                "text": doc,
-                "source": meta.get("source", "unknown"),
-                "score": round(1 - dist, 4),  # cosine similarity
-                "metadata": meta,
-            })
+        for i, (doc, dist, meta) in enumerate(
+            zip(
+                results["documents"][0],
+                results["distances"][0],
+                results["metadatas"][0],
+            )
+        ):
+            chunks.append(
+                {
+                    "text": doc,
+                    "source": meta.get("source", "unknown"),
+                    "score": round(1 - dist, 4),  # cosine similarity
+                    "metadata": meta,
+                }
+            )
         return chunks
 
     except Exception as e:
